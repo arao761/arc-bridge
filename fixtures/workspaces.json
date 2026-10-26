@@ -1,0 +1,16 @@
+{
+  "format": "arc-bridge", "version": 1,
+  "profiles": [
+    { "id": "work", "name": "Work", "spaces": [
+      { "id": "engineering", "name": "Engineering", "tabs": [
+        { "id": "docs", "title": "Documentation", "url": "https://example.com/docs", "pinned": true, "folder": ["Reference"] },
+        { "id": "issues", "title": "Issues", "url": "https://example.com/issues" }
+      ] }
+    ] },
+    { "id": "personal", "name": "Personal", "spaces": [
+      { "id": "reading", "name": "Reading", "tabs": [
+        { "id": "read", "title": "Reading list", "url": "https://example.com/docs" }
+      ] }
+    ] }
+  ]
+}
