@@ -1,0 +1,21 @@
+node_modules/
+dist/
+dist-*/
+release/
+artifacts/
+coverage/
+.env
+.env.*
+.DS_Store
+*.log
+*.dmg
+*.zip
+*.sqlite*
+*.db*
+*.p12
+*.pem
+*.key
+# Never commit actual browser exports or profile contents.
+private/
+exports/
+profiles/
