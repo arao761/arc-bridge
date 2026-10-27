@@ -1,0 +1,174 @@
+{
+  "format": "arc-bridge",
+  "version": 1,
+  "profiles": [
+    {
+      "id": "demo-profile-0",
+      "name": "Work",
+      "spaces": [
+        {
+          "id": "demo-space-0-0",
+          "name": "Product",
+          "tabs": [
+            {
+              "id": "demo-tab-1",
+              "title": "Figma \u00b7 Product explorations",
+              "url": "https://example.com/design",
+              "pinned": true,
+              "folder": [
+                "Design"
+              ]
+            },
+            {
+              "id": "demo-tab-2",
+              "title": "Product roadmap",
+              "url": "https://example.com/roadmap",
+              "pinned": true,
+              "folder": []
+            },
+            {
+              "id": "demo-tab-3",
+              "title": "Engineering notes",
+              "url": "https://example.com/engineering",
+              "pinned": false,
+              "folder": [
+                "Reference"
+              ]
+            },
+            {
+              "id": "demo-tab-4",
+              "title": "Release checklist",
+              "url": "https://example.com/release",
+              "pinned": false,
+              "folder": []
+            }
+          ]
+        },
+        {
+          "id": "demo-space-0-1",
+          "name": "Engineering",
+          "tabs": [
+            {
+              "id": "demo-tab-5",
+              "title": "MDN Web Docs",
+              "url": "https://developer.mozilla.org/",
+              "pinned": true,
+              "folder": [
+                "Reference"
+              ]
+            },
+            {
+              "id": "demo-tab-6",
+              "title": "TypeScript handbook",
+              "url": "https://www.typescriptlang.org/docs/",
+              "pinned": true,
+              "folder": [
+                "Reference"
+              ]
+            },
+            {
+              "id": "demo-tab-7",
+              "title": "Pull requests",
+              "url": "https://example.com/pulls",
+              "pinned": false,
+              "folder": []
+            },
+            {
+              "id": "demo-tab-8",
+              "title": "API reference",
+              "url": "https://example.com/api",
+              "pinned": false,
+              "folder": []
+            }
+          ]
+        },
+        {
+          "id": "demo-space-0-2",
+          "name": "Reading",
+          "tabs": [
+            {
+              "id": "demo-tab-9",
+              "title": "Building things that last",
+              "url": "https://example.com/lasting",
+              "pinned": false,
+              "folder": []
+            },
+            {
+              "id": "demo-tab-10",
+              "title": "Notes on good software",
+              "url": "https://example.com/software",
+              "pinned": false,
+              "folder": [
+                "Essays"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "demo-profile-1",
+      "name": "Personal",
+      "spaces": [
+        {
+          "id": "demo-space-1-0",
+          "name": "Everyday",
+          "tabs": [
+            {
+              "id": "demo-tab-11",
+              "title": "Weekend ideas",
+              "url": "https://example.com/weekend",
+              "pinned": true,
+              "folder": []
+            },
+            {
+              "id": "demo-tab-12",
+              "title": "A little inspiration",
+              "url": "https://example.com/inspiration",
+              "pinned": false,
+              "folder": [
+                "Collections"
+              ]
+            },
+            {
+              "id": "demo-tab-13",
+              "title": "The reading list",
+              "url": "https://example.com/books",
+              "pinned": false,
+              "folder": []
+            }
+          ]
+        },
+        {
+          "id": "demo-space-1-1",
+          "name": "Travel",
+          "tabs": [
+            {
+              "id": "demo-tab-14",
+              "title": "Places to go",
+              "url": "https://example.com/places",
+              "pinned": false,
+              "folder": [
+                "Next trip"
+              ]
+            },
+            {
+              "id": "demo-tab-15",
+              "title": "A cabin in the woods",
+              "url": "https://example.com/cabin",
+              "pinned": false,
+              "folder": []
+            },
+            {
+              "id": "demo-tab-16",
+              "title": "Train routes",
+              "url": "https://example.com/trains",
+              "pinned": false,
+              "folder": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
