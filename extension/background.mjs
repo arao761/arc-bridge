@@ -33,6 +33,15 @@ function request(message) {
     port.postMessage({ ...message, requestId });
   });
 }
+async function hasGroups() {
+  return (
+    !!browser.tabs.group &&
+    !!browser.tabGroups &&
+    (await browser.permissions
+      .contains({ permissions: ["tabGroups"] })
+      .catch(() => false))
+  );
+}
 async function connect() {
   if (port) return;
   try {
@@ -59,7 +68,7 @@ async function connect() {
       profileId: config.id,
       label: config.label,
       enabled: config.enabled,
-      groups: !!browser.tabs.group && !!browser.tabGroups,
+      groups: await hasGroups(),
     });
     lastError = "";
   } catch (e) {
@@ -127,7 +136,7 @@ async function poll() {
       profileId: config.id,
       label: config.label,
       enabled: config.enabled,
-      groups: !!browser.tabs.group && !!browser.tabGroups,
+      groups: await hasGroups(),
     });
     const { job: meta } = await request({ type: "poll" });
     if (!meta) return;
@@ -205,7 +214,7 @@ browser.runtime.onMessage.addListener(async (m) => {
         profileId: config.id,
         label: config.label,
         enabled: config.enabled,
-        groups: !!browser.tabs.group && !!browser.tabGroups,
+        groups: await hasGroups(),
       });
     return { ok: true };
   }
