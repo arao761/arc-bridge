@@ -19,6 +19,8 @@ Audited October 27, 2026 on Apple Silicon macOS with Electron 45 and Firefox 158
 
 The real Firefox/Electron integration check drives the source import, inventory, profile mapping, review, confirmation and migration UI. It creates two tabs and matching bookmarks, skips an unsafe link, checks pinning, retries without duplicates, restarts Firefox using the same temporary profile, verifies retained receiver identity, changes a tab/bookmark, and confirms undo preserves those changes. It then creates a 60-tab grouped migration through bounded native chunks, pauses partway through, resumes to exactly 60 tabs, verifies a real Firefox tab group, and undoes it. It also rejects a duplicate staging batch and checks that a second desktop launch exits while the original stays available. No renderer exceptions occur. The desktop/native host run with system-only PATH, without requiring developer Node.
 
+The 0.2.1 Apple Silicon DMG passed checksum verification. Its mounted app and a copy installed into a temporary local folder passed deep, strict ad-hoc code-signature verification. The app copied from that DMG passed the full Firefox integration flow described above. Packaged main/native/companion files match the audited build. GitHub Checks passed for the code commit.
+
 Restart/recycled-ID failure cases are additionally covered by deterministic unit tests. Multiple simultaneous real Firefox profiles, 20,000-tab scale, every Arc export variant, and every operating-system/browser combination are not covered by this test.
 
 ## Remaining release limits
