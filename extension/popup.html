@@ -1,1 +1,60 @@
-<!doctype html><html><head><meta charset="utf-8"><title>Arc Bridge receiver</title><link rel="stylesheet" href="popup.css"></head><body><header><span class="mark">↗</span><div><h1>Arc Bridge</h1><p>This Firefox profile</p></div></header><main><label>Receiver name<input id="label" maxlength="100" placeholder="Work · Firefox"></label><p class="help">Open this extension in the intended Firefox profile. This label identifies that profile to Arc Bridge; it does not create or switch profiles.</p><label class="check"><input id="enabled" type="checkbox"> Allow migrations confirmed in the desktop app</label><button id="save">Save & connect</button><p id="connection"></p><label>Receiver ID<input id="receiver" readonly></label><p class="help">For file transfer, copy this ID into Arc Bridge’s receiver field.</p><section><h2>Import a migration file</h2><input id="file" type="file" accept=".json"><p id="preview" class="help">Choose a profile-specific migration file from Arc Bridge.</p><label class="check"><input id="confirm" type="checkbox"> I reviewed the file and this is the correct profile.</label><button id="import" disabled>Import into this profile</button></section><section><h2>Latest migration</h2><p id="report">No migrations yet.</p><button id="cancel" class="secondary">Pause migration</button><button id="undo" class="secondary">Undo unchanged imported items</button></section><p id="error" role="status"></p></main><script src="popup.js"></script></body></html>
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Arc Bridge receiver</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <span class="mark">↗</span>
+      <div>
+        <h1>Arc Bridge</h1>
+        <p>This Firefox profile</p>
+      </div>
+    </header>
+    <main>
+      <label
+        >Receiver name<input
+          id="label"
+          maxlength="100"
+          placeholder="Work · Firefox"
+      /></label>
+      <p class="help">
+        Open this extension in the intended Firefox profile. This label
+        identifies that profile to Arc Bridge; it does not create or switch
+        profiles.
+      </p>
+      <label class="check"
+        ><input id="enabled" type="checkbox" /> Allow migrations confirmed in
+        the desktop app</label
+      ><button id="save">Save & connect</button>
+      <p id="connection"></p>
+      <label>Receiver ID<input id="receiver" readonly /></label>
+      <p class="help">
+        For file transfer, copy this ID into Arc Bridge’s receiver field.
+      </p>
+      <section>
+        <h2>Import a migration file</h2>
+        <input id="file" type="file" accept=".json" />
+        <p id="preview" class="help">
+          Choose a profile-specific migration file from Arc Bridge.
+        </p>
+        <label class="check"
+          ><input id="confirm" type="checkbox" /> I reviewed the file and this
+          is the correct profile.</label
+        ><button id="import" disabled>Import into this profile</button>
+      </section>
+      <section>
+        <h2>Latest migration</h2>
+        <p id="report">No migrations yet.</p>
+        <button id="cancel" class="secondary">Pause migration</button
+        ><button id="undo" class="secondary">
+          Undo unchanged imported items
+        </button>
+      </section>
+      <p id="error" role="status"></p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
