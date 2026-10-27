@@ -17,6 +17,9 @@ export function validateJob(job, profileId) {
     if (
       !op ||
       typeof op.sourceId !== "string" ||
+      !op.sourceId.trim() ||
+      Object.hasOwn(Object.prototype, op.sourceId) ||
+      Object.hasOwn(Object.prototype, op.spaceId || "") ||
       op.sourceId.length > 4096 ||
       ids.has(op.sourceId) ||
       op.targetProfileId !== profileId ||
@@ -140,7 +143,7 @@ export function createRunner(api, storage, profileId) {
         await checkpoint();
         return created.id;
       };
-      const root = await folder("root", `Arc Bridge · ${job.id.slice(0, 8)}`);
+      const root = await folder("root", `Arc Bridge · ${job.id.slice(-8)}`);
       for (const op of job.operations) {
         if (await options.isCancelled?.()) {
           journal.status = "cancelled";

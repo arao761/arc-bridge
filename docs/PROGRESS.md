@@ -12,7 +12,7 @@
 
 ## Validation
 
-`npm test`: 20 tests pass. Production frontend/desktop/extension build passes. Firefox add-on lint reports zero errors, notices and warnings. Dependency audit reports zero vulnerabilities.
+`npm test`: 22 tests pass. Production frontend/desktop/extension build passes. Firefox add-on lint reports zero errors, notices and warnings. Dependency audit reports zero vulnerabilities.
 
 Both the development and packaged Electron runtimes with fresh temporary Firefox 158 profiles passed a real native-messaging test: receiver registration, two actual tab/bookmark creations including a pinned tab, retry without duplicates, and undo preserving one deliberately changed tab and bookmark. All fixture traffic stayed on loopback. Actual user browser profiles and Arc session files were not accessed.
 

@@ -22,6 +22,8 @@ export function readArchive(value) {
   let tabs = 0;
   const unique = (value, label) => {
     const id = text(value, label);
+    if (Object.hasOwn(Object.prototype, id))
+      throw new Error("Reserved source ID.");
     if (ids.has(id)) throw new Error(`Duplicate source ID: ${id}`);
     ids.add(id);
     return id;

@@ -66,3 +66,8 @@ test("planning never modifies the source archive", () => {
   plan.operations[0].folder.push("Changed");
   assert.equal(JSON.stringify(fixture), before);
 });
+test("portable archives reject IDs reserved by object prototypes", () => {
+  const value = structuredClone(fixture);
+  value.profiles[0].spaces[0].tabs[0].id = "__proto__";
+  assert.throws(() => readArchive(value), /Reserved source ID/);
+});

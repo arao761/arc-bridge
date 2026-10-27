@@ -214,3 +214,13 @@ test("missing optional group permission falls back to separate windows", async (
   assert.equal(j.status, "completed");
   assert.equal(m.windows.size, 2);
 });
+test("untrusted migration IDs cannot write inherited journal properties", () => {
+  for (const id of ["__proto__", "constructor", "toString"]) {
+    const value = job();
+    value.operations[0].sourceId = id;
+    assert.throws(() => validateJob(value, "receiver"), /Invalid migration/);
+    const other = job();
+    other.operations[0].spaceId = id;
+    assert.throws(() => validateJob(other, "receiver"), /Invalid migration/);
+  }
+});
