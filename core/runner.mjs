@@ -21,11 +21,12 @@ export function createRunner(api, storage, profileId) {
     try {
       journal=await get(job.id) || {id:job.id,profileId,status:'ready',entries:{},folders:{},windows:{},groups:{},notes:[],total:job.operations.length};
       // Bind a migration ID to its exact plan so edited/replayed files cannot reuse ownership.
-      const planText=JSON.stringify(job.operations);
-      if(journal.planText && journal.planText!==planText)throw new Error('This migration ID was already used for a different plan.');
-      journal.planText=planText;
+      const bytes=new TextEncoder().encode(JSON.stringify(job.operations));
+      const planHash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map((v)=>v.toString(16).padStart(2,'0')).join('');
+      if(journal.planHash && journal.planHash!==planHash)throw new Error('This migration ID was already used for a different plan.');
+      journal.planHash=planHash;
       if(journal.pending){journal.status='needs-review';journal.error='An operation was interrupted before its result was saved. Review the new browser resources before retrying; automatic replay is paused to avoid duplicates.';await save(journal);return journal;}
-      const groups=!!api.tabs.group && !!api.tabGroups?.update;
+      const groups=!!api.tabs.group && !!api.tabGroups?.update && (!api.permissions || await api.permissions.contains({permissions:['tabGroups']}).catch(()=>false));
       if(job.operations.some((o)=>o.spaceMode==='groups')&&!groups&&!journal.notes.includes('Tab groups are unavailable; each Space uses a separate window.'))journal.notes.push('Tab groups are unavailable; each Space uses a separate window.');
       journal.status='running';delete journal.error;await save(journal);
       const checkpoint=async()=>{await save(journal);await options.onProgress?.(summary(journal));};
@@ -81,6 +82,7 @@ export function createRunner(api, storage, profileId) {
         if(e.bookmark&&!e.bookmark.removed){try{const [b]=await api.bookmarks.get(e.bookmark.id);if(b.url===e.bookmark.url&&b.title===e.bookmark.title&&b.parentId===e.bookmark.parentId){await api.bookmarks.remove(b.id);e.bookmark.removed=true;}else preserved++;}catch{e.bookmark.removed=true;}await save(j);}
       }
       for(const f of Object.values(j.folders).reverse()){try{const [current]=await api.bookmarks.get(f.id);if(current.title===f.title&&current.parentId===f.parentId&&(await api.bookmarks.getChildren(f.id)).length===0)await api.bookmarks.remove(f.id);}catch{}}
+      for(const win of Object.values(j.windows)){if(win.placeholderId){try{const t=await api.tabs.get(win.placeholderId);if(t.url==='about:blank'&&t.windowId===win.id)await api.tabs.remove(t.id);}catch{}}}
       j.status='undone';j.preserved=preserved;if(j.pending)j.notes.push('An interrupted operation may have left untracked resources; review the browser manually.');await save(j);await options.onProgress?.(summary(j));return j;
     }finally{busy=false;}
   }

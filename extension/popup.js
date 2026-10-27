@@ -1,0 +1,11 @@
+let job=null,initialized=false;
+const $=(id)=>document.getElementById(id);
+const call=async(m)=>{try{const result=await browser.runtime.sendMessage(m);$('error').textContent='';return result;}catch(e){$('error').textContent=e.message;throw e;}};
+async function reload(){const s=await call({type:'state'});if(!initialized){$('label').value=s.config.label;$('enabled').checked=s.config.enabled;initialized=true;}$('receiver').value=s.config.id;$('connection').textContent=s.connected?'Desktop bridge connected':s.error||'Waiting for desktop bridge';$('report').textContent=s.report?`${s.report.status} · ${s.report.done}/${s.report.total} tabs${s.report.error?' · '+s.report.error:''}`:'No migrations yet.';}
+$('save').onclick=async()=>{if(browser.tabs.group&&browser.tabGroups){try{await browser.permissions.request({permissions:['tabGroups']});}catch{}}await call({type:'configure',label:$('label').value,enabled:$('enabled').checked});await reload();};
+$('file').onchange=async()=>{job=null;$('import').disabled=true;try{const file=$('file').files[0];if(!file||file.size>20*1024*1024)throw Error('Choose a migration JSON file under 20 MB.');const value=JSON.parse(await file.text());const {config}=await call({type:'state'});if(value.format!=='arc-bridge-migration'||value.targetProfileId!==config.id||!Array.isArray(value.operations))throw Error('This file is not addressed to this Firefox profile.');job=value;$('preview').textContent=`${job.operations.length} tabs addressed to ${config.label}. URLs and bookmarks will be created; existing data stays intact.`;$('import').disabled=!$('confirm').checked;}catch(e){$('error').textContent=e.message;}};
+$('confirm').onchange=()=>{$('import').disabled=!job||!$('confirm').checked;};
+$('import').onclick=async()=>{await call({type:'import',job,confirmed:$('confirm').checked});$('import').disabled=true;await reload();};
+$('cancel').onclick=async()=>{await call({type:'cancel'});await reload();};
+$('undo').onclick=async()=>{if(confirm('Remove only unchanged tabs and bookmarks created by the latest migration? Changed or moved items will be kept.')){await call({type:'undo',confirmed:true});await reload();}};
+void reload();setInterval(()=>void reload(),3000);
