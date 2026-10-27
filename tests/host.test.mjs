@@ -83,6 +83,56 @@ test("native host framing, profile binding, chunking, report ownership and termi
     });
     assert.equal(chunk.operations.length, 50);
     assert.equal(chunk.nextOffset, 50);
+    assert.equal(
+      (
+        await send({
+          type: "chunk",
+          id: "job-1",
+          runToken: "run-one",
+          offset: 50,
+        })
+      ).operations.length,
+      50,
+    );
+    assert.equal(
+      (
+        await send({
+          type: "chunk",
+          id: "job-1",
+          runToken: "run-one",
+          offset: 100,
+        })
+      ).operations.length,
+      5,
+    );
+    assert.ok(
+      (
+        await send({
+          type: "chunk",
+          id: "job-1",
+          runToken: "run-one",
+          offset: -1,
+        })
+      ).error,
+    );
+    await send({
+      type: "hello",
+      profileId: "receiver-one",
+      label: "Test profile",
+      enabled: false,
+    });
+    assert.equal((await send({ type: "poll" })).job, null);
+    assert.equal(
+      (await send({ type: "status", id: "job-1", runToken: "run-one" }))
+        .cancelRequested,
+      true,
+    );
+    await send({
+      type: "hello",
+      profileId: "receiver-one",
+      label: "Test profile",
+      enabled: true,
+    });
     assert.ok(
       (
         await send({

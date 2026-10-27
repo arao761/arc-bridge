@@ -3,6 +3,8 @@ let config,
   port,
   runner,
   busy = false,
+  polling = false,
+  activeId = null,
   requestIndex = 0,
   lastError = "";
 const requests = new Map();
@@ -86,10 +88,11 @@ async function report(meta, value) {
       report: value,
     });
 }
-async function runJob(job, meta) {
-  if (busy) throw Error("Another migration is active.");
+async function runJob(job, meta, reserved = false) {
+  if (busy && !reserved) throw Error("Another migration is active.");
   validateJob(job, config.id);
   busy = true;
+  activeId = job.id;
   try {
     const result = await runner.execute(job, {
       onProgress: (r) => report(meta, r),
@@ -124,9 +127,19 @@ async function runJob(job, meta) {
     throw e;
   } finally {
     busy = false;
+    activeId = null;
   }
 }
 async function poll() {
+  if (polling || busy) return;
+  polling = true;
+  try {
+    await pollOnce();
+  } finally {
+    polling = false;
+  }
+}
+async function pollOnce() {
   if (busy) return;
   await connect();
   if (!port || !config.enabled) return;
@@ -147,6 +160,16 @@ async function poll() {
           onProgress: (r) => report(meta, r),
         });
         await report(meta, summary(j));
+      } catch (e) {
+        const j = await runner.get(meta.id);
+        await report(meta, {
+          ...(j
+            ? summary(j)
+            : { id: meta.id, total: meta.total, done: 0, notes: [] }),
+          status: "failed",
+          error: e.message,
+        }).catch(() => {});
+        throw e;
       } finally {
         busy = false;
       }
@@ -221,25 +244,39 @@ browser.runtime.onMessage.addListener(async (m) => {
   if (m.type === "import") {
     if (!m.confirmed)
       throw Error("Confirm the target profile before importing.");
+    if (busy || polling)
+      throw Error("Wait for the active receiver operation to finish.");
     validateJob(m.job, config.id);
-    await browser.storage.local.remove("cancel");
-    void runJob(m.job).catch((e) => {
+    busy = true;
+    try {
+      await browser.storage.local.remove("cancel");
+    } catch (e) {
+      busy = false;
+      throw e;
+    }
+    void runJob(m.job, null, true).catch((e) => {
       lastError = e.message;
     });
     return { ok: true };
   }
   if (m.type === "cancel") {
-    const r = (await browser.storage.local.get("lastReport")).lastReport;
-    if (r) await browser.storage.local.set({ cancel: r.id });
+    if (activeId) await browser.storage.local.set({ cancel: activeId });
     return { ok: true };
   }
   if (m.type === "undo") {
     if (m.confirmed !== true) throw Error("Confirm undo first.");
     const r = (await browser.storage.local.get("lastReport")).lastReport;
     if (!r) throw Error("No migration to undo.");
-    const j = await runner.undo(r.id);
-    await report(null, summary(j));
-    return { ok: true };
+    if (busy || polling)
+      throw Error("Wait for the active receiver operation to finish.");
+    busy = true;
+    try {
+      const j = await runner.undo(r.id);
+      await report(null, summary(j));
+      return { ok: true };
+    } finally {
+      busy = false;
+    }
   }
   throw Error("Unknown extension request.");
 });

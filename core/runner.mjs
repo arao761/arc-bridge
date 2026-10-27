@@ -10,7 +10,11 @@ export function validateJob(job, profileId) {
     throw new Error(
       "This file belongs to a different Firefox receiver. Return to Arc Bridge and choose this profile.",
     );
-  if (!Array.isArray(job.operations) || job.operations.length > 20000)
+  if (
+    !Array.isArray(job.operations) ||
+    !job.operations.length ||
+    job.operations.length > 20000
+  )
     throw new Error("Invalid migration size.");
   const ids = new Set();
   for (const op of job.operations) {
@@ -26,6 +30,12 @@ export function validateJob(job, profileId) {
       typeof op.spaceId !== "string" ||
       typeof op.title !== "string" ||
       typeof op.spaceName !== "string" ||
+      !op.spaceId.trim() ||
+      op.spaceId.length > 4096 ||
+      op.title.length > 4096 ||
+      op.spaceName.length > 4096 ||
+      typeof op.url !== "string" ||
+      op.url.length > 16384 ||
       !["windows", "groups"].includes(op.spaceMode) ||
       !Array.isArray(op.folder) ||
       op.folder.length > 20 ||
@@ -42,6 +52,22 @@ export function validateJob(job, profileId) {
 }
 export function createRunner(api, storage, profileId) {
   let busy = false;
+  const ownerKey = "arc-bridge-owner";
+  const token = () => crypto.randomUUID();
+  const ownedTab = async (t, resource) =>
+    !!resource.owner &&
+    (await api.sessions.getTabValue(t.id, ownerKey)) === resource.owner;
+  const ownedWindow = async (w, resource) =>
+    !!resource.owner &&
+    (await api.sessions.getWindowValue(w.id, ownerKey)) === resource.owner;
+  // IDs can be reassigned by Firefox. Resolve extension-owned markers instead.
+  const findWindow = async (resource) => {
+    for (const w of await api.windows.getAll())
+      if (await ownedWindow(w, resource)) return w;
+    throw Error(
+      "An imported window is no longer available or its ownership cannot be verified. Start a new migration.",
+    );
+  };
   const get = async (id) => (await storage.get(`job:${id}`))[`job:${id}`];
   const save = async (j) => {
     j.updatedAt = new Date().toISOString();
@@ -77,6 +103,10 @@ export function createRunner(api, storage, profileId) {
           "This migration ID was already used for a different plan.",
         );
       journal.planHash = planHash;
+      if (journal.status === "undone")
+        throw Error(
+          "This migration was undone. Choose a new migration ID to import it again.",
+        );
       if (journal.pending) {
         journal.status = "needs-review";
         journal.error =
@@ -115,7 +145,8 @@ export function createRunner(api, storage, profileId) {
         try {
           result = await fn();
         } catch (e) {
-          delete journal.pending;
+          if (!String(e.message).includes("ownership marker"))
+            delete journal.pending;
           throw e;
         }
         delete journal.pending;
@@ -124,11 +155,17 @@ export function createRunner(api, storage, profileId) {
       const folder = async (key, title, parentId) => {
         if (journal.folders[key]) {
           try {
-            await api.bookmarks.get(journal.folders[key].id);
-            return journal.folders[key].id;
+            const [current] = await api.bookmarks.get(journal.folders[key].id);
+            const expected = journal.folders[key];
+            if (
+              current.title !== expected.title ||
+              current.parentId !== expected.parentId
+            )
+              throw Error("changed folder");
+            return current.id;
           } catch {
             throw new Error(
-              "An imported bookmark folder was removed. Start a new migration instead of recreating it silently.",
+              "An imported bookmark folder was removed, renamed or moved. Start a new migration instead of recreating it silently.",
             );
           }
         }
@@ -153,21 +190,46 @@ export function createRunner(api, storage, profileId) {
         let entry = journal.entries[op.sourceId];
         if (entry?.done) continue;
         const groupMode = op.spaceMode === "groups" && groups;
-        const windowKey = groupMode ? "profile" : op.spaceId;
+        const windowKey = groupMode ? "grouped:profile" : `space:${op.spaceId}`;
         let win = journal.windows[windowKey];
         if (win) {
-          try {
-            await api.windows.get(win.id);
-          } catch {
-            throw new Error(
-              "An imported window was closed. Start a new migration rather than silently reopening it.",
-            );
+          const current = await findWindow(win);
+          if (win.id !== current.id) {
+            win.id = current.id;
+            // Group IDs also change across restarts. Recreate groups for remaining tabs.
+            journal.groups = {};
           }
         } else {
-          const created = await create(`window:${windowKey}`, () =>
-            api.windows.create({ url: "about:blank", focused: false }),
-          );
-          win = { id: created.id, placeholderId: created.tabs?.[0]?.id };
+          const owner = token(),
+            placeholderOwner = token();
+          const created = await create(`window:${windowKey}`, async () => {
+            const w = await api.windows.create({
+              url: "about:blank",
+              focused: false,
+            });
+            await api.sessions
+              .setWindowValue(w.id, ownerKey, owner)
+              .catch(() => {
+                throw Error(
+                  "Could not save ownership marker; review the created window.",
+                );
+              });
+            if (w.tabs?.[0])
+              await api.sessions
+                .setTabValue(w.tabs[0].id, ownerKey, placeholderOwner)
+                .catch(() => {
+                  throw Error(
+                    "Could not save ownership marker; review the created placeholder.",
+                  );
+                });
+            return w;
+          });
+          win = {
+            id: created.id,
+            owner,
+            placeholderOwner,
+            placeholderId: created.tabs?.[0]?.id,
+          };
           journal.windows[windowKey] = win;
           await checkpoint();
         }
@@ -199,23 +261,49 @@ export function createRunner(api, storage, profileId) {
           };
           await checkpoint();
         }
+        const hadTab = !!entry.tab;
         if (!entry.tab) {
-          const tab = await create(`tab:${op.sourceId}`, () =>
-            api.tabs.create({
+          const owner = token();
+          const tab = await create(`tab:${op.sourceId}`, async () => {
+            const created = await api.tabs.create({
               windowId: win.id,
               url: op.url,
               pinned: op.pinned,
               active: false,
               ...(!op.pinned ? { discarded: true, title: op.title } : {}),
-            }),
-          );
+            });
+            await api.sessions
+              .setTabValue(created.id, ownerKey, owner)
+              .catch(() => {
+                throw Error(
+                  "Could not save ownership marker; review the created tab.",
+                );
+              });
+            return created;
+          });
           entry.tab = {
+            owner,
+            windowOwner: win.owner,
             id: tab.id,
             url: op.url,
             pinned: op.pinned,
             windowId: win.id,
           };
           await checkpoint();
+        }
+        if (hadTab) {
+          const current = await api.tabs.query({});
+          let found;
+          for (const t of current)
+            if (await ownedTab(t, entry.tab)) {
+              found = t;
+              break;
+            }
+          if (!found)
+            throw Error(
+              "An unfinished imported tab is no longer available. Review the browser before starting a new migration.",
+            );
+          entry.tab.id = found.id;
         }
         if (groupMode && !op.pinned && !entry.grouped) {
           try {
@@ -256,7 +344,11 @@ export function createRunner(api, storage, profileId) {
         if (win.placeholderId) {
           try {
             const tab = await api.tabs.get(win.placeholderId);
-            if (tab.url === "about:blank") await api.tabs.remove(tab.id);
+            if (
+              tab.url === "about:blank" &&
+              (await ownedTab(tab, { owner: win.placeholderOwner }))
+            )
+              await api.tabs.remove(tab.id);
           } catch {}
         }
       journal.status = "completed";
@@ -282,27 +374,43 @@ export function createRunner(api, storage, profileId) {
       const j = await get(id);
       if (!j || j.profileId !== profileId)
         throw new Error("No owned migration found in this profile.");
+      j.status = "running";
+      delete j.error;
+      await save(j);
+      await options.onProgress?.(summary(j));
       let preserved = 0;
+      const liveTabs = await api.tabs.query({});
+      const byOwner = new Map();
+      for (const tab of liveTabs) {
+        const owner = await api.sessions.getTabValue(tab.id, ownerKey);
+        if (owner) byOwner.set(owner, tab);
+      }
       for (const e of Object.values(j.entries).reverse()) {
         if (e.tab && !e.tab.removed) {
-          try {
-            const t = await api.tabs.get(e.tab.id);
-            if (
-              t.url === e.tab.url &&
-              !!t.pinned === e.tab.pinned &&
-              t.windowId === e.tab.windowId
-            ) {
-              await api.tabs.remove(t.id);
-              e.tab.removed = true;
-            } else preserved++;
-          } catch {
+          const t = byOwner.get(e.tab.owner);
+          if (!t) {
+            // Legacy journals without markers must never use a recycled numeric ID.
+            if (e.tab.owner) e.tab.removed = true;
+            else preserved++;
+          } else if (
+            t.url === e.tab.url &&
+            !!t.pinned === e.tab.pinned &&
+            (await api.sessions.getWindowValue(t.windowId, ownerKey)) ===
+              e.tab.windowOwner
+          ) {
+            await api.tabs.remove(t.id);
             e.tab.removed = true;
-          }
+          } else preserved++;
           await save(j);
         }
         if (e.bookmark && !e.bookmark.removed) {
+          let b;
           try {
-            const [b] = await api.bookmarks.get(e.bookmark.id);
+            [b] = await api.bookmarks.get(e.bookmark.id);
+          } catch {
+            preserved++;
+          }
+          if (b) {
             if (
               b.url === e.bookmark.url &&
               b.title === e.bookmark.title &&
@@ -311,8 +419,6 @@ export function createRunner(api, storage, profileId) {
               await api.bookmarks.remove(b.id);
               e.bookmark.removed = true;
             } else preserved++;
-          } catch {
-            e.bookmark.removed = true;
           }
           await save(j);
         }
@@ -332,7 +438,10 @@ export function createRunner(api, storage, profileId) {
         if (win.placeholderId) {
           try {
             const t = await api.tabs.get(win.placeholderId);
-            if (t.url === "about:blank" && t.windowId === win.id)
+            if (
+              t.url === "about:blank" &&
+              (await ownedTab(t, { owner: win.placeholderOwner }))
+            )
               await api.tabs.remove(t.id);
           } catch {}
         }
@@ -346,6 +455,15 @@ export function createRunner(api, storage, profileId) {
       await save(j);
       await options.onProgress?.(summary(j));
       return j;
+    } catch (e) {
+      const j = await get(id);
+      if (j) {
+        j.status = "failed";
+        j.error = `Undo stopped: ${e.message}. You can retry undo.`;
+        await save(j);
+        await options.onProgress?.(summary(j));
+      }
+      throw e;
     } finally {
       busy = false;
     }

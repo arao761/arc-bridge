@@ -8,8 +8,12 @@ const esc = (s) =>
         v
       ],
   );
-const content = (n) =>
-  n.nodeName === "#text" ? n.value : (n.childNodes || []).map(content).join("");
+const content = (n, depth = 0) => {
+  if (depth > 60) throw Error("The HTML nesting is too deep.");
+  return n.nodeName === "#text"
+    ? n.value
+    : (n.childNodes || []).map((child) => content(child, depth + 1)).join("");
+};
 const attrs = (n) =>
   Object.fromEntries((n.attrs || []).map((a) => [a.name, a.value]));
 export function importSource(source) {

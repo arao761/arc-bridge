@@ -119,11 +119,11 @@ async function handle(message) {
       operations,
       nextOffset: message.offset + operations.length,
       total: job.operations.length,
-      cancelRequested: !!job.cancelRequested,
+      cancelRequested: !!job.cancelRequested || !receiver?.enabled,
     };
   }
   if (message.type === "status")
-    return { cancelRequested: !!job.cancelRequested };
+    return { cancelRequested: !!job.cancelRequested || !receiver?.enabled };
   if (message.type === "report") {
     const r = message.report;
     if (
@@ -152,7 +152,10 @@ async function handle(message) {
         ? r.notes.slice(0, 20).map((v) => String(v).slice(0, 500))
         : [],
       error: r.error ? String(r.error).slice(0, 500) : null,
-      preserved: r.preserved || 0,
+      preserved:
+        Number.isInteger(r.preserved) && r.preserved >= 0
+          ? Math.min(r.preserved, job.operations.length * 2)
+          : 0,
       updatedAt: new Date().toISOString(),
     });
     return { ok: true };

@@ -243,6 +243,8 @@ export default function App() {
       [id]: { spaces: "groups", ...prev[id], ...value },
     }));
   const toggle = (ids) => {
+    setMappings({});
+    setConfirmed(false);
     setSelected((prev) => {
       const next = new Set(prev);
       const all = ids.every((id) => next.has(id));
@@ -643,12 +645,14 @@ export default function App() {
                               aria-label={`Source profile label for ${p.name}`}
                               value={grouping[p.id] || ""}
                               maxLength={100}
-                              onChange={(e) =>
+                              onChange={(e) => {
+                                setMappings({});
+                                setConfirmed(false);
                                 setGrouping({
                                   ...grouping,
                                   [p.id]: e.target.value,
-                                })
-                              }
+                                });
+                              }}
                             />
                           </label>
                         </div>
@@ -1039,9 +1043,16 @@ export default function App() {
                         key={j.id}
                         job={j}
                         onControl={(action) =>
-                          act(async () =>
-                            setState(await native.control(j.id, action)),
-                          )
+                          act(async () => {
+                            if (
+                              action === "undo" &&
+                              !confirm(
+                                "Undo unchanged tabs and bookmarks created by this migration? Changed items will be kept.",
+                              )
+                            )
+                              return;
+                            setState(await native.control(j.id, action));
+                          })
                         }
                       />
                     ))}

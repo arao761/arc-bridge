@@ -13,7 +13,18 @@ function mock() {
     set: async (v) => Object.assign(values, structuredClone(v)),
   };
   const api = {
+    sessions: {
+      setTabValue: async (id, key, value) => {
+        tabs.get(id)[key] = value;
+      },
+      getTabValue: async (id, key) => tabs.get(id)?.[key],
+      setWindowValue: async (id, key, value) => {
+        windows.get(id)[key] = value;
+      },
+      getWindowValue: async (id, key) => windows.get(id)?.[key],
+    },
     tabs: {
+      query: async () => [...tabs.values()],
       create: async (o) => {
         if (fail) {
           fail = false;
@@ -30,6 +41,7 @@ function mock() {
       remove: async (id) => tabs.delete(id),
     },
     windows: {
+      getAll: async () => [...windows.values()],
       create: async () => {
         const w = { id: next++, tabs: [] };
         const tab = await api.tabs.create({
@@ -222,5 +234,90 @@ test("untrusted migration IDs cannot write inherited journal properties", () => 
     const other = job();
     other.operations[0].spaceId = id;
     assert.throws(() => validateJob(other, "receiver"), /Invalid migration/);
+  }
+});
+test("undo resolves restored IDs by ownership and preserves recycled IDs", async () => {
+  const m = mock(),
+    r = createRunner(m.api, m.storage, "receiver");
+  await r.execute(job());
+  const originals = [...m.tabs.values()];
+  for (const t of originals) {
+    m.tabs.set(t.id, { ...t, "arc-bridge-owner": undefined });
+    m.tabs.set(t.id + 1000, { ...t, id: t.id + 1000 });
+  }
+  const result = await createRunner(m.api, m.storage, "receiver").undo(
+    "test-job",
+  );
+  assert.equal(result.status, "undone");
+  assert.equal(m.tabs.size, 2);
+  assert.ok(
+    originals.every((t) => m.tabs.has(t.id) && !m.tabs.has(t.id + 1000)),
+  );
+});
+test("resume resolves restored window IDs and rejects a recycled window", async () => {
+  const m = mock(),
+    r = createRunner(m.api, m.storage, "receiver"),
+    j = job(2);
+  j.operations.forEach((o) => {
+    o.spaceId = "same";
+    o.spaceMode = "windows";
+  });
+  let checks = 0;
+  await r.execute(j, { isCancelled: async () => ++checks > 1 });
+  const original = [...m.windows.values()][0];
+  m.windows.set(original.id, { ...original, "arc-bridge-owner": undefined });
+  m.windows.set(2000, { ...original, id: 2000 });
+  await createRunner(m.api, m.storage, "receiver").execute(j);
+  assert.equal(
+    [...m.tabs.values()].find((t) => t.url.endsWith("/1")).windowId,
+    2000,
+  );
+});
+test("undo failures stay retryable and do not claim removal", async () => {
+  const m = mock(),
+    r = createRunner(m.api, m.storage, "receiver");
+  await r.execute(job());
+  const remove = m.api.tabs.remove;
+  m.api.tabs.remove = async () => {
+    throw Error("Temporary browser failure");
+  };
+  await assert.rejects(r.undo("test-job"), /Temporary/);
+  assert.equal((await r.get("test-job")).status, "failed");
+  assert.equal(m.tabs.size, 2);
+  m.api.tabs.remove = remove;
+  assert.equal((await r.undo("test-job")).status, "undone");
+  assert.equal(m.tabs.size, 0);
+});
+test("resume stops when an imported folder was changed", async () => {
+  const m = mock(),
+    r = createRunner(m.api, m.storage, "receiver");
+  let checks = 0;
+  await r.execute(job(), { isCancelled: async () => ++checks > 1 });
+  [...m.bookmarks.values()][0].title = "User renamed root";
+  await assert.rejects(r.execute(job()), /renamed or moved/);
+  assert.equal([...m.bookmarks.values()].filter((b) => b.url).length, 1);
+});
+test("ownership marker failure pauses replay instead of duplicating a created tab", async () => {
+  const m = mock(),
+    r = createRunner(m.api, m.storage, "receiver");
+  const set = m.api.sessions.setTabValue;
+  m.api.sessions.setTabValue = async (id, key, value) => {
+    if (m.tabs.get(id).url !== "about:blank") throw Error("Storage failed");
+    return set(id, key, value);
+  };
+  await assert.rejects(r.execute(job()), /ownership marker/);
+  assert.equal((await r.execute(job())).status, "needs-review");
+  assert.equal(
+    [...m.tabs.values()].filter((t) => t.url.startsWith("https:")).length,
+    1,
+  );
+});
+test("empty and oversized migration fields are rejected", () => {
+  const empty = job(0);
+  assert.throws(() => validateJob(empty, "receiver"), /size/);
+  for (const field of ["title", "spaceName", "spaceId", "url"]) {
+    const j = job();
+    j.operations[0][field] = "x".repeat(17000);
+    assert.throws(() => validateJob(j, "receiver"), /Invalid/);
   }
 });

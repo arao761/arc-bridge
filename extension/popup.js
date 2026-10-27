@@ -1,5 +1,6 @@
 let job = null,
-  initialized = false;
+  initialized = false,
+  receiverBusy = false;
 const $ = (id) => document.getElementById(id);
 const call = async (m) => {
   try {
@@ -18,6 +19,9 @@ async function reload() {
     $("enabled").checked = s.config.enabled;
     initialized = true;
   }
+  receiverBusy = s.busy;
+  $("import").disabled =
+    receiverBusy || receiverBusy || !job || !$("confirm").checked;
   $("receiver").value = s.config.id;
   $("connection").textContent = s.connected
     ? "Desktop bridge connected"
@@ -41,6 +45,8 @@ $("save").onclick = async () => {
 };
 $("file").onchange = async () => {
   job = null;
+  $("confirm").checked = false;
+  $("preview").textContent = "";
   $("import").disabled = true;
   try {
     const file = $("file").files[0];
@@ -56,14 +62,17 @@ $("file").onchange = async () => {
       throw Error("This file is not addressed to this Firefox profile.");
     job = value;
     $("preview").textContent =
-      `${job.operations.length} tabs addressed to ${config.label}. URLs and bookmarks will be created; existing data stays intact.`;
+      `${job.operations.length} tabs addressed to ${config.label}. Review these destinations before confirming:\n` +
+      job.operations
+        .map((o) => `${o.pinned ? "[Pinned] " : ""}${o.title} — ${o.url}`)
+        .join("\n");
     $("import").disabled = !$("confirm").checked;
   } catch (e) {
     $("error").textContent = e.message;
   }
 };
 $("confirm").onchange = () => {
-  $("import").disabled = !job || !$("confirm").checked;
+  $("import").disabled = receiverBusy || !job || !$("confirm").checked;
 };
 $("import").onclick = async () => {
   await call({ type: "import", job, confirmed: $("confirm").checked });
@@ -86,3 +95,8 @@ $("undo").onclick = async () => {
 };
 void reload();
 setInterval(() => void reload(), 3000);
+
+window.addEventListener("unhandledrejection", (event) => {
+  $("error").textContent = event.reason?.message || "The operation failed.";
+  event.preventDefault();
+});

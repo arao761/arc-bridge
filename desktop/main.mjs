@@ -10,6 +10,14 @@ if (process.env.ARCBRIDGE_TEST_DATA)
   app.setPath("userData", process.env.ARCBRIDGE_TEST_DATA);
 const data = app.getPath("userData");
 let win;
+let mutations = Promise.resolve();
+const serialize =
+  (fn) =>
+  (...args) => {
+    const pending = mutations.then(() => fn(...args));
+    mutations = pending.catch(() => {});
+    return pending;
+  };
 const localRead = async (file) => {
   try {
     return JSON.parse(await fs.readFile(file, "utf8"));
@@ -19,7 +27,7 @@ const localRead = async (file) => {
 };
 async function atomic(file, value) {
   await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-  const tmp = `${file}.${process.pid}.tmp`;
+  const tmp = `${file}.${randomUUID()}.tmp`;
   await fs.writeFile(tmp, JSON.stringify(value), { mode: 0o600 });
   await fs.rename(tmp, file);
 }
@@ -195,59 +203,76 @@ app.whenReady().then(async () => {
       "https://support.mozilla.org/en-US/kb/profile-management",
     ),
   );
-  handle("stage", async (jobs) => {
-    if (!Array.isArray(jobs) || !jobs.length || jobs.length > 50)
-      throw Error("Choose 1–50 destination profiles.");
-    const current = await state();
-    for (const j of jobs) {
-      validateJob(j, j.targetProfileId);
-      if (
-        !valid(j.id) ||
-        !current.receivers.some(
-          (r) => r.id === j.targetProfileId && r.online && r.enabled,
+  handle(
+    "stage",
+    serialize(async (jobs) => {
+      if (!Array.isArray(jobs) || !jobs.length || jobs.length > 50)
+        throw Error("Choose 1–50 destination profiles.");
+      const current = await state();
+      const ids = new Set(),
+        targets = new Set();
+      for (const j of jobs) {
+        if (ids.has(j.id) || targets.has(j.targetProfileId))
+          throw Error(
+            "Each migration and destination profile must appear only once.",
+          );
+        ids.add(j.id);
+        targets.add(j.targetProfileId);
+        validateJob(j, j.targetProfileId);
+        if (
+          !valid(j.id) ||
+          !current.receivers.some(
+            (r) => r.id === j.targetProfileId && r.online && r.enabled,
+          )
         )
-      )
-        throw Error(
-          "A receiver is offline or has not allowed desktop migrations.",
+          throw Error(
+            "A receiver is offline or has not allowed desktop migrations.",
+          );
+        if (await localRead(path.join(data, "jobs", `${j.id}.json`)))
+          throw Error("This migration already exists; resume it from History.");
+      }
+      for (const j of jobs) {
+        const receiver = current.receivers.find(
+          (r) => r.id === j.targetProfileId,
         );
-      if (await localRead(path.join(data, "jobs", `${j.id}.json`)))
-        throw Error("This migration already exists; resume it from History.");
-    }
-    for (const j of jobs) {
-      const receiver = current.receivers.find(
-        (r) => r.id === j.targetProfileId,
-      );
-      await atomic(path.join(data, "jobs", `${j.id}.json`), {
-        ...j,
-        receiverLabel: receiver.label,
-        authorized: true,
-        state: "queued",
-        runToken: randomUUID(),
-        action: "migrate",
-        createdAt: new Date().toISOString(),
-      });
-    }
-    return state();
-  });
-  handle("control", async (id, action) => {
-    if (!valid(id) || !["cancel", "resume", "undo"].includes(action))
-      throw Error("Invalid migration action.");
-    const file = path.join(data, "jobs", `${id}.json`);
-    const job = await localRead(file);
-    if (!job) throw Error("Migration not found.");
-    if (action === "cancel") job.cancelRequested = true;
-    else {
-      const report = await localRead(path.join(data, "reports", `${id}.json`));
-      if (report?.runToken === job.runToken && report.status === "running")
-        throw Error("Pause this migration and wait for it to stop first.");
-      job.cancelRequested = false;
-      job.runToken = randomUUID();
-      job.action = action === "undo" ? "undo" : "migrate";
-      job.state = "queued";
-    }
-    await atomic(file, job);
-    return state();
-  });
+        await atomic(path.join(data, "jobs", `${j.id}.json`), {
+          ...j,
+          receiverLabel: receiver.label,
+          authorized: true,
+          cancelRequested: false,
+          state: "queued",
+          runToken: randomUUID(),
+          action: "migrate",
+          createdAt: new Date().toISOString(),
+        });
+      }
+      return state();
+    }),
+  );
+  handle(
+    "control",
+    serialize(async (id, action) => {
+      if (!valid(id) || !["cancel", "resume", "undo"].includes(action))
+        throw Error("Invalid migration action.");
+      const file = path.join(data, "jobs", `${id}.json`);
+      const job = await localRead(file);
+      if (!job) throw Error("Migration not found.");
+      if (action === "cancel") job.cancelRequested = true;
+      else {
+        const report = await localRead(
+          path.join(data, "reports", `${id}.json`),
+        );
+        if (report?.runToken === job.runToken && report.status === "running")
+          throw Error("Pause this migration and wait for it to stop first.");
+        job.cancelRequested = false;
+        job.runToken = randomUUID();
+        job.action = action === "undo" ? "undo" : "migrate";
+        job.state = "queued";
+      }
+      await atomic(file, job);
+      return state();
+    }),
+  );
   handle("report", async () => {
     const s = await state();
     const r = await dialog.showSaveDialog(win, {
