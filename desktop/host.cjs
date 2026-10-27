@@ -48,6 +48,10 @@ async function handle(message) {
   const receiver = await read(
     path.join(DATA, "receivers", `${profileId}.json`),
   );
+  if (receiver) {
+    receiver.lastSeen = new Date().toISOString();
+    await write(path.join(DATA, "receivers", `${profileId}.json`), receiver);
+  }
   if (message.type === "poll") {
     if (!receiver?.enabled) return { job: null };
     const names = await fs.readdir(path.join(DATA, "jobs")).catch(() => []);

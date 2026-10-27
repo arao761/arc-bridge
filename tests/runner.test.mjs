@@ -321,3 +321,14 @@ test("empty and oversized migration fields are rejected", () => {
     assert.throws(() => validateJob(j, "receiver"), /Invalid/);
   }
 });
+
+test("undo preserves ambiguous tabs if a copy carries the same ownership marker", async () => {
+  const m = mock(),
+    r = createRunner(m.api, m.storage, "receiver");
+  await r.execute(job());
+  const original = [...m.tabs.values()][0];
+  m.tabs.set(9000, { ...original, id: 9000 });
+  const undone = await r.undo("test-job");
+  assert.equal(undone.preserved, 1);
+  assert.ok(m.tabs.has(original.id) && m.tabs.has(9000));
+});

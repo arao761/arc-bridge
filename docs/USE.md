@@ -42,7 +42,9 @@ The migration adds new browser resources; it does not merge or overwrite existin
 
 **Migration history** shows per-profile progress and warnings. Pause stops between operations. Resume retries the same saved plan and skips already checkpointed items. The companion owns execution and journals, so closing the desktop window does not itself stop an already executing job. Pausing requires the receiver to be available to acknowledge the request.
 
-Undo removes only tracked tabs and bookmarks whose URL, pin/window placement, title and parent information still match the relevant ownership checks. Modified or moved items are kept. Nonempty bookmark folders are kept. Resources created immediately before an interrupted journal checkpoint may be untracked; automatic replay pauses with **needs-review** rather than guessing and duplicating data. Undo then removes only known resources and reports that manual review may be needed. It is not a universal browser rollback.
+New migrations attach extension-private ownership markers to tabs/windows so numeric IDs reused after restart cannot authorize deletion. Resume resolves restored windows by marker; ownership that cannot be verified stops safely. Legacy journals without markers preserve their tabs rather than trusting IDs.
+
+Undo removes only tracked tabs and bookmarks whose URL, pin/window placement, title and parent information still match the relevant ownership checks. Modified or moved items are kept. A failed removal leaves undo retryable. Nonempty bookmark folders are kept. Resources created immediately before an interrupted journal checkpoint may be untracked; automatic replay pauses with **needs-review** rather than guessing and duplicating data. Undo then removes only known resources and reports that manual review may be needed. It is not a universal browser rollback.
 
 Desktop report files contain IDs, receiver labels, counts and errors, not a full database backup. Export a portable archive separately. Receiver labels can still be personal, and migration files contain URLs; treat exported files as private.
 
@@ -50,7 +52,7 @@ Desktop report files contain IDs, receiver labels, counts and errors, not a full
 
 Install the companion in the intended Firefox profile and copy its receiver ID. In Arc Bridge's mapping step, expand **Or use a migration file** and paste that ID. Review and export the profile-specific migration file.
 
-In the companion popup, choose the file, review its tab count, confirm this is the correct profile and import. A receiver-ID mismatch is rejected. File transfers report their state inside the companion; they do not appear in desktop history unless queued through the native bridge.
+In the companion popup, choose the file, review its tab count and listed URLs, confirm this is the correct profile and import. A receiver-ID mismatch is rejected. File transfers report their state inside the companion; they do not appear in desktop history unless queued through the native bridge.
 
 ## Portable backups and bookmark fallback
 

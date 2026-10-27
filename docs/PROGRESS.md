@@ -12,7 +12,7 @@
 
 ## Validation
 
-`npm test`: 28 tests pass. Production frontend/desktop/extension build passes. Firefox add-on lint reports zero errors, notices and warnings. Dependency audit reports zero vulnerabilities.
+`npm test`: 31 tests pass. Production frontend/desktop/extension build passes. Firefox add-on lint reports zero errors, notices and warnings. Dependency audit reports zero vulnerabilities.
 
 Both the development and packaged Electron runtimes with fresh temporary Firefox 158 profiles passed a real native-messaging test: receiver registration, two actual tab/bookmark creations including a pinned tab, retry without duplicates, and undo preserving one deliberately changed tab and bookmark. All fixture traffic stayed on loopback. Actual user browser profiles and Arc session files were not accessed.
 
@@ -30,4 +30,6 @@ Added extension-private tab/window ownership markers using Firefox sessions APIs
 
 Serialized desktop queue changes, rejected duplicate destinations/job IDs in a batch, prevented overlapping extension polls and manual operations, and made disabling a receiver request cancellation. Tightened migration-file limits, bounded nested HTML text extraction, reset file-import confirmation for each newly selected file, and added URL previews. Inventory selection/regrouping invalidates profile mappings, and both progress/history undo actions require confirmation.
 
-The expanded real Firefox test now drives the source import, mapping, review, explicit confirmation and migration UI. It verifies unsupported-link reporting, a full browser restart with receiver identity retained, retry without duplicates, preservation of changed resources, and a 60-tab chunked transfer with pause/resume and undo. All test data and browser profiles are synthetic and temporary.
+The expanded real Firefox test now drives the source import, mapping, review, explicit confirmation and migration UI. It verifies unsupported-link reporting, a full browser restart with receiver identity retained, retry without duplicates, preservation of changed resources, and a 60-tab chunked transfer with actual Firefox tab grouping, pause/resume and undo. Dedicated companion tests cover overlapping polling and replacing a migration file after consent. All test data and browser profiles are synthetic and temporary.
+
+A second desktop launch reuses the existing process, native status/progress requests keep receiver presence current during long transfers, and ambiguous copied ownership markers preserve resources instead of choosing a tab arbitrarily.

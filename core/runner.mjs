@@ -62,8 +62,10 @@ export function createRunner(api, storage, profileId) {
     (await api.sessions.getWindowValue(w.id, ownerKey)) === resource.owner;
   // IDs can be reassigned by Firefox. Resolve extension-owned markers instead.
   const findWindow = async (resource) => {
+    const matches = [];
     for (const w of await api.windows.getAll())
-      if (await ownedWindow(w, resource)) return w;
+      if (await ownedWindow(w, resource)) matches.push(w);
+    if (matches.length === 1) return matches[0];
     throw Error(
       "An imported window is no longer available or its ownership cannot be verified. Start a new migration.",
     );
@@ -383,12 +385,15 @@ export function createRunner(api, storage, profileId) {
       const byOwner = new Map();
       for (const tab of liveTabs) {
         const owner = await api.sessions.getTabValue(tab.id, ownerKey);
-        if (owner) byOwner.set(owner, tab);
+        if (owner) byOwner.set(owner, byOwner.has(owner) ? null : tab);
       }
       for (const e of Object.values(j.entries).reverse()) {
         if (e.tab && !e.tab.removed) {
           const t = byOwner.get(e.tab.owner);
-          if (!t) {
+          if (byOwner.has(e.tab.owner) && !t) {
+            // Copies can carry the same marker. Preserve both rather than guessing.
+            preserved++;
+          } else if (!t) {
             // Legacy journals without markers must never use a recycled numeric ID.
             if (e.tab.owner) e.tab.removed = true;
             else preserved++;

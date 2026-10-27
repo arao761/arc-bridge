@@ -97,6 +97,26 @@ try {
   const rendererErrors = [];
   page.on("pageerror", (e) => rendererErrors.push(e.message));
   await page.waitForFunction(() => !!window.arcBridge);
+  const second = spawn(
+    process.argv[2] ? resolve(process.argv[2]) : electronPath,
+    [...(process.argv[2] ? [] : ["."]), "--hidden"],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        ARCBRIDGE_TEST_DATA: join(temp, "data"),
+        ARCBRIDGE_NATIVE_DIR: join(temp, "native"),
+      },
+      stdio: "ignore",
+    },
+  );
+  const [secondExit] = await once(second, "exit");
+  assert.equal(
+    secondExit,
+    0,
+    "a second app launch reuses the existing instance",
+  );
+  assert.equal(desktopChild.exitCode, null);
   await page.evaluate(() => window.arcBridge.install());
   const original = JSON.parse(
     await readFile(join(temp, "native/dev.arcbridge.json"), "utf8"),
@@ -117,7 +137,8 @@ try {
     await readFile(join(ext, "manifest.json"), "utf8"),
   );
   manifest.browser_specific_settings.gecko.id = extensionId;
-  manifest.permissions.push("http://127.0.0.1/*");
+  manifest.permissions.push("http://127.0.0.1/*", "tabGroups");
+  manifest.optional_permissions = [];
   await writeFile(join(ext, "manifest.json"), JSON.stringify(manifest));
   const code = await readFile(join(ext, "background.js"), "utf8");
   await writeFile(
@@ -132,9 +153,12 @@ try {
   const xpi = join(temp, "companion.zip");
   execFileSync("zip", ["-rq", xpi, "."], { cwd: ext });
   const gecko = await downloadGecko("0.37.1");
+  const profileDir = join(temp, "firefox-profile");
+  await mkdir(profileDir);
   const options = new firefox.Options()
     .setBinary("/Applications/Firefox.app/Contents/MacOS/firefox")
-    .addArguments("-headless")
+    .addArguments("-headless", "-profile", profileDir)
+    .setPreference("browser.startup.page", 3)
     .setPreference(
       "extensions.webextensions.uuids",
       JSON.stringify({ [extensionId]: extensionUUID }),
@@ -174,7 +198,72 @@ try {
     targetProfileId: receiver,
     operations,
   };
-  await page.evaluate((jobs) => window.arcBridge.stage(jobs), [job]);
+  const source = {
+    format: "arc-bridge",
+    version: 1,
+    profiles: [
+      {
+        id: "source-profile",
+        name: "Synthetic source",
+        spaces: operations.map((o, i) => ({
+          id: o.spaceId,
+          name: o.spaceName,
+          tabs: [
+            {
+              id: o.sourceId,
+              title: o.title,
+              url: o.url,
+              pinned: o.pinned,
+              folder: o.folder,
+            },
+            ...(i === 0
+              ? [
+                  {
+                    id: "unsafe-link",
+                    title: "Unsupported link",
+                    url: "javascript:alert(1)",
+                    pinned: false,
+                    folder: [],
+                  },
+                ]
+              : []),
+          ],
+        })),
+      },
+    ],
+  };
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "synthetic-archive.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(source)),
+  });
+  await page
+    .getByRole("button", { name: "Map Firefox profiles", exact: true })
+    .click();
+  await page
+    .getByLabel("Firefox receiver for Synthetic source", { exact: true })
+    .selectOption(receiver);
+  await page
+    .getByLabel("Space layout for Synthetic source", { exact: true })
+    .selectOption("windows");
+  await page
+    .getByRole("button", { name: "Review migration", exact: true })
+    .click();
+  assert.equal(
+    await page
+      .getByRole("button", { name: "Migrate to Firefox", exact: true })
+      .isDisabled(),
+    true,
+  );
+  await page.getByRole("checkbox").check();
+  await page
+    .getByRole("button", { name: "Migrate to Firefox", exact: true })
+    .click();
+  job.id = await wait(async () => {
+    const s = await page.evaluate(() => window.arcBridge.state());
+    return s.jobs[0]?.id;
+  }, "reviewed UI migration queued");
+
   const first = await wait(async () => {
     const s = await page.evaluate(() => window.arcBridge.state());
     const j = s.jobs.find((j) => j.id === job.id);
@@ -182,6 +271,7 @@ try {
     return j?.status === "completed" ? j : null;
   }, "real Firefox migration");
   assert.equal(first.done, 2);
+  assert.equal(first.skipped, 1);
   const query = async () => inspection?.tabs || [];
   let tabs = await wait(async () => {
     const rows = await query();
@@ -195,6 +285,23 @@ try {
     return s.jobs.find((j) => j.id === job.id && j.status === "completed");
   }, "idempotent retry");
   assert.equal((await query()).length, 2);
+  await driver.quit();
+  driver = null;
+  inspection = null;
+  driver = await new Builder()
+    .forBrowser("firefox")
+    .setFirefoxOptions(options)
+    .setFirefoxService(new firefox.ServiceBuilder(gecko))
+    .build();
+  await driver.installAddon(xpi, true);
+  await wait(
+    async () => inspection?.receiver === receiver,
+    "receiver identity after Firefox restart",
+  );
+  await wait(
+    async () => (await query()).length === 2,
+    "restored synthetic tabs after Firefox restart",
+  );
   command = { modifyJob: job.id };
   await wait(async () => {
     const t = await query();
@@ -210,6 +317,61 @@ try {
   assert.equal(undone.preserved, 2);
   await wait(async () => (await query()).length === 1, "inspection after undo");
   assert.equal((await query()).length, 1);
+  // Exercise native chunks, interruption and resume with a larger synthetic plan.
+  const batch = {
+    ...job,
+    id: `batch-${suffix}`,
+    operations: Array.from({ length: 60 }, (_, i) => ({
+      ...operations[1],
+      sourceId: `batch-${i}`,
+      spaceId: "batch-space",
+      spaceName: "Batch",
+      spaceMode: "groups",
+      url: `${base}/batch-${i}`,
+    })),
+  };
+  await assert.rejects(
+    page.evaluate((jobs) => window.arcBridge.stage(jobs), [batch, batch]),
+    /only once/,
+  );
+  await page.evaluate((jobs) => window.arcBridge.stage(jobs), [batch]);
+  await wait(async () => {
+    const s = await page.evaluate(() => window.arcBridge.state());
+    return s.jobs.find(
+      (j) => j.id === batch.id && j.status === "running" && j.done >= 3,
+    );
+  }, "batch progress");
+  await page.evaluate((id) => window.arcBridge.control(id, "cancel"), batch.id);
+  const paused = await wait(async () => {
+    const s = await page.evaluate(() => window.arcBridge.state());
+    return s.jobs.find((j) => j.id === batch.id && j.status === "cancelled");
+  }, "batch pause");
+  assert.ok(paused.done > 0 && paused.done < 60);
+  await page.evaluate((id) => window.arcBridge.control(id, "resume"), batch.id);
+  await wait(async () => {
+    const s = await page.evaluate(() => window.arcBridge.state());
+    const j = s.jobs.find((j) => j.id === batch.id);
+    if (j?.status === "failed") throw Error(j.error);
+    return j?.status === "completed" && j.done === 60;
+  }, "batch resume");
+  await wait(
+    async () =>
+      (await query()).filter((t) => t.url.includes("/batch-")).length === 60,
+    "batch exactly once",
+  );
+  const batchTabs = (await query()).filter((t) => t.url.includes("/batch-"));
+  assert.equal(new Set(batchTabs.map((t) => t.windowId)).size, 1);
+  assert.equal(new Set(batchTabs.map((t) => t.groupId)).size, 1);
+  assert.ok(batchTabs[0].groupId >= 0, "actual Firefox tab group created");
+  await page.evaluate((id) => window.arcBridge.control(id, "undo"), batch.id);
+  await wait(async () => {
+    const s = await page.evaluate(() => window.arcBridge.state());
+    return s.jobs.find((j) => j.id === batch.id && j.status === "undone");
+  }, "batch undo");
+  await wait(
+    async () => (await query()).length === 1,
+    "batch resources removed",
+  );
   assert.deepEqual(rendererErrors, []);
   await page.screenshot({ path: join(temp, "desktop.png") });
   console.log(
@@ -220,7 +382,15 @@ try {
         nativeMessaging: true,
         systemNodeRequired: false,
         rendererErrors: 0,
-        actualTabsCreated: 2,
+        fullImportReviewUI: true,
+        unsupportedLinkSkipped: true,
+        firefoxRestart: true,
+        actualTabsCreated: 62,
+        chunkedBatchTabs: 60,
+        actualFirefoxTabGroup: true,
+        pauseResumeWithoutDuplicates: true,
+        duplicateStageRejected: true,
+        singleDesktopInstance: true,
         pinnedTabs: 1,
         retryDidNotDuplicate: true,
         undoKeptModifiedResources: 2,
@@ -233,8 +403,17 @@ try {
 } finally {
   await driver?.quit().catch(() => {});
   await app?.close().catch(() => {});
-  desktopChild?.kill("SIGTERM");
+  if (desktopChild && desktopChild.exitCode === null) {
+    const exited = once(desktopChild, "exit");
+    desktopChild.kill("SIGTERM");
+    await exited;
+  }
   await rm(manifestFile, { force: true });
   await new Promise((r) => server.close(r));
-  await rm(temp, { recursive: true, force: true });
+  await rm(temp, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 100,
+  });
 }

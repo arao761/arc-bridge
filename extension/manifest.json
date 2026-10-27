@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Arc Bridge Companion",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Receive reviewed Arc tab migrations in this Firefox profile. All processing stays local.",
   "browser_specific_settings": {
     "gecko": {
